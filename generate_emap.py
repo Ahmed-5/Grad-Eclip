@@ -12,11 +12,11 @@ from torchvision.transforms import Normalize, Compose, InterpolationMode, ToTens
 import torch.nn.functional as F
 from skimage.transform import resize as np_resize
 
-import Game_MM_CLIP.clip as mm_clip
-import CLIP_Surgery.clip as surgery_clip
+import Grad_Eclip.Game_MM_CLIP.CLIP.clip as mm_clip
+import Grad_Eclip.CLIP_Surgery.clip as surgery_clip
 
-from M2IB.scripts.clip_wrapper import ClipWrapper
-from M2IB.scripts.methods import vision_heatmap_iba, text_heatmap_iba
+from Grad_Eclip.M2IB.scripts.clip_wrapper import ClipWrapper
+from Grad_Eclip.M2IB.scripts.methods import vision_heatmap_iba, text_heatmap_iba
 from transformers import CLIPTokenizerFast
 
 from tqdm import tqdm
@@ -25,7 +25,7 @@ _transform = Compose([
         ToTensor(),
         Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
     ])
-def imgprocess_keepsize(img, patch_size=[16, 16], scale_factor=1):
+def imgprocess_keepsize(img, patch_size=[32, 32], scale_factor=1):
     w, h = img.size
     ph, pw = patch_size
     nw = int(w * scale_factor / pw + 0.5) * pw
@@ -38,9 +38,9 @@ def imgprocess_keepsize(img, patch_size=[16, 16], scale_factor=1):
 
 # CLIP
 device = "cuda" if torch.cuda.is_available() else "cpu"
-clipmodel, preprocess = clip.load("ViT-B/16", device=device)
-mm_clipmodel, _ = mm_clip.load("ViT-B/16", device=device, jit=False)
-surgery_model, _ = surgery_clip.load("CS-ViT-B/16", device=device)
+clipmodel, preprocess = clip.load("ViT-B/32", device=device)
+mm_clipmodel, _ = mm_clip.load("ViT-B/32", device=device, jit=False)
+surgery_model, _ = surgery_clip.load("CS-ViT-B/32", device=device)
 
 # clipmodel, preprocess = clip.load("ViT-B/32", device=device)
 # mm_clipmodel, _ = mm_clip.load("ViT-B/32", device=device, jit=False)
@@ -49,7 +49,7 @@ surgery_model, _ = surgery_clip.load("CS-ViT-B/16", device=device)
 # mm_clipmodel.load_state_dict(torch.load("clip-imp-pretrained_128_6_after_4.pt", map_location=device))
 # surgery_model.load_state_dict(torch.load("clip-imp-pretrained_128_6_after_4.pt", map_location=device))
 
-clip_tokenizer = CLIPTokenizerFast.from_pretrained("openai/clip-vit-base-patch16")
+clip_tokenizer = CLIPTokenizerFast.from_pretrained("openai/clip-vit-base-patch32")
 m2ib_model = ClipWrapper(clipmodel)
 
 def accuracy(output, target, topk=(1,)):
