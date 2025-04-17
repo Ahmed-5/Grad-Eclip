@@ -12,7 +12,7 @@ from torchvision.transforms import Normalize, Compose, InterpolationMode, ToTens
 import torch.nn.functional as F
 from skimage.transform import resize as np_resize
 
-import Grad_Eclip.Game_MM_CLIP.CLIP.clip as mm_clip
+import Grad_Eclip.Game_MM_CLIP.clip.clip as mm_clip
 import Grad_Eclip.CLIP_Surgery.clip as surgery_clip
 
 from Grad_Eclip.M2IB.scripts.clip_wrapper import ClipWrapper
