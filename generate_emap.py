@@ -307,6 +307,70 @@ def clip_encode_dense(x):
     ##############
     
     return x, v_final[:,1:], x_in, v, q_out, k_out, attn, attn_output, (feah, feaw)
+    
+def clip_encode_dense_by_model(clipmodel, x):
+    vision_width = clipmodel.visual.transformer.width
+    vision_heads = vision_width // 64
+    clip_inres = clipmodel.visual.input_resolution
+    clip_ksize = clipmodel.visual.conv1.kernel_size
+    
+    # modified from CLIP
+    x = x.half()
+    x = clipmodel.visual.conv1(x)  
+    feah, feaw = x.shape[-2:]
+
+    x = x.reshape(x.shape[0], x.shape[1], -1) 
+    x = x.permute(0, 2, 1) 
+    class_embedding = clipmodel.visual.class_embedding.to(x.dtype)
+
+    x = torch.cat([class_embedding + torch.zeros(x.shape[0], 1, x.shape[-1]).to(x), x], dim=1)
+
+    pos_embedding = clipmodel.visual.positional_embedding.to(x.dtype)
+    tok_pos, img_pos = pos_embedding[:1, :], pos_embedding[1:, :]
+    pos_h = clip_inres // clip_ksize[0]
+    pos_w = clip_inres // clip_ksize[1]
+    assert img_pos.size(0) == (pos_h * pos_w), f"the size of pos_embedding ({img_pos.size(0)}) does not match resolution shape pos_h ({pos_h}) * pos_w ({pos_w})"
+    img_pos = img_pos.reshape(1, pos_h, pos_w, img_pos.shape[1]).permute(0, 3, 1, 2)
+    img_pos = torch.nn.functional.interpolate(img_pos, size=(feah, feaw), mode='bicubic', align_corners=False)
+    img_pos = img_pos.reshape(1, img_pos.shape[1], -1).permute(0, 2, 1)
+    pos_embedding = torch.cat((tok_pos[None, ...], img_pos), dim=1)
+    x = x + pos_embedding
+    x = clipmodel.visual.ln_pre(x)
+    
+    x = x.permute(1, 0, 2)  # NLD -> LND
+    x_in = torch.nn.Sequential(*clipmodel.visual.transformer.resblocks[:-1])(x)
+
+    ##################
+    # LastTR.attention
+    targetTR = clipmodel.visual.transformer.resblocks[-1]
+    x_before_attn = targetTR.ln_1(x_in)
+    
+    linear = torch._C._nn.linear    
+    q, k, v = linear(x_before_attn, targetTR.attn.in_proj_weight, targetTR.attn.in_proj_bias).chunk(3, dim=-1)
+    attn_output, attn = attention_layer(q, k, v, 1) #vision_heads
+    x_after_attn = linear(attn_output, targetTR.attn.out_proj.weight, targetTR.attn.out_proj.bias)
+    
+    x = x_after_attn + x_in
+    x_out = x + targetTR.mlp(targetTR.ln_2(x))
+
+    x = x_out.permute(1, 0, 2)  # LND -> NLD
+    x = clipmodel.visual.ln_post(x)
+    x = x @ clipmodel.visual.proj
+    
+    ## ==== get lastv ==============
+    with torch.no_grad():
+        qkv = torch.stack((q, k, v), dim=0)
+        qkv = linear(qkv, targetTR.attn.out_proj.weight, targetTR.attn.out_proj.bias)
+        q_out, k_out, v_out = qkv[0], qkv[1], qkv[2]
+
+        v_final = v_out + x_in
+        v_final = v_final + targetTR.mlp(targetTR.ln_2(v_final))
+        v_final = v_final.permute(1, 0, 2)
+        v_final = clipmodel.visual.ln_post(v_final)
+        v_final = v_final @ clipmodel.visual.proj
+    ##############
+    
+    return x, v_final[:,1:], x_in, v, q_out, k_out, attn, attn_output, (feah, feaw)
 
     
 def clip_encode_text_dense(text, n):
